@@ -22,8 +22,8 @@ max_value = 255
 max_value_H = 360//2
 low_H = 111
 low_S = 43
-low_V = 9
-high_H = 180
+low_V = 25
+high_H = 145
 high_S = 255
 high_V = 255
 
@@ -33,6 +33,9 @@ low_V_name = 'Low V'
 high_H_name = 'High H'
 high_S_name = 'High S'
 high_V_name = 'High V'
+
+cx = 0
+cy = 0
 
 ## [low]
 def on_low_H_thresh_trackbar(val):
@@ -172,7 +175,7 @@ try:
         bg_removed = np.where((depth_image_3d > clipping_distance) | (depth_image_3d <= 0), grey_color, color_image)
 
 
-        #Code I wrote
+        #rgb->hsv| threshold control bar| bitwise help glue the filtered imgae and the original image 
         frame_HSV = cv2.cvtColor(bg_removed, cv2.COLOR_BGR2HSV)
         frame_threshold = cv2.inRange(frame_HSV, (low_H, low_S, low_V), (high_H, high_S, high_V))
         res = cv2.bitwise_and(color_image, color_image, mask=frame_threshold)
@@ -183,14 +186,53 @@ try:
 
         #getting into contour
         res_gray = cv2.cvtColor(res, cv2.COLOR_RGB2GRAY)
-        ret, thresh = cv2.threshold(res_gray, 100, 255, 0)
+        ret, thresh = cv2.threshold(res_gray, 20, 255, 0)
         contours, hierachy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        
+
+        
+        #draw the rectangles & contours
         for cnt in contours:
-            cv2.drawContours(res, cnt, -1, (0, 255, 0), 3)
+
+            #filter out the noises
+            area = cv2.contourArea(cnt)
+            if area < 200: #filter out the noises, change the value if needed
+                cv2.fillPoly(thresh, pts=[cnt], color=0)
+                continue
+
+            #cv2.drawContours(res, cnt, -1, (0, 255, 0), 3)
+            rect = cv2.minAreaRect(cnt)
+            box = cv2.boxPoints(rect)
+            box = np.int0(box)
+            cv2.drawContours(res, [box], -1, (0, 255, 0), 3)
+
+            
+            #get the all moment values
+            if len(contours) != 0:
+                M = cv2.moments(cnt)
+            #get the centreoid of the moment
+            if M['m00'] != 0:
+                cx = int(M['m10']/M['m00'])
+                cy = int(M['m01']/M['m00'])
+                center = (cx, cy)
+                cv2.circle(res, center, 5, (0,255,0), 2)
+                print(f'cx is {cx}, cy is {cy}')
+        #once cx, cy appears, convert depth map and pixel coordinates into real coordinates
+            
+            profile1 = profile.get_stream(rs.stream.color)
+            intr = profile1.as_video_stream_profile().get_intrinsics()
+
+            depth = aligned_depth_frame.get_distance(int(cx),int(cy)) #questions
+            dx,dy,dz = rs.rs2_deproject_pixel_to_point(intr,[cx,cy], depth)
+            print(f'dx is {dx}, dy is {dy}, dz is {dz}')
+        
+            
+
+        #Showing the stream
         cv2.imshow(window_capture_name, bg_removed)   
-        cv2.imshow('frame', res_gray)
-        cv2.imshow('mask', thresh)
-        cv2.imshow('res',res)
+        cv2.imshow('res_gray', res_gray)
+        cv2.imshow('res_gray_wiz_threshold', thresh)
+        cv2.imshow('ContourWithBox',res)
          
         #Code I wrote
 
